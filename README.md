@@ -19,13 +19,12 @@ The following packages are required:
 - iptables
 - redsocks
 - dnsmasq
-- socat
 - systemd
 - dig
 
 ### System Requirements
 
-- Linux operating system
+- Linux operating system(Tested on Fedora 40)
 - Root privileges
 - A running SOCKS5 proxy (default port: 1080)
 
