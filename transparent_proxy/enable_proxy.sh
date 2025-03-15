@@ -48,16 +48,16 @@ main() {
   check_root
   check_deps
 
-  step "1. 关闭 systemd-resolved..."
-  systemctl stop systemd-resolved 2>/dev/null || true
-  systemctl disable systemd-resolved 2>/dev/null || true
-  mv /etc/resolv.conf /etc/resolv.conf.bak
-
-  step "2. 安装必要软件..."
+  step "1. 安装必要软件..."
   dnf install -y redsocks iptables socat dnsmasq || {
     echo -e "${RED}✗ 软件安装失败！${RESET}"
     exit 1
   }
+
+  step "2. 关闭 systemd-resolved..."
+  systemctl stop systemd-resolved 2>/dev/null || true
+  systemctl disable systemd-resolved 2>/dev/null || true
+  mv /etc/resolv.conf /etc/resolv.conf.bak 2>/dev/null || true  
 
   step "3. 配置内核参数..."
   sysctl -w net.ipv4.ip_forward=1
@@ -76,7 +76,7 @@ base {
 }
 
 redsocks {
-    local_ip = 127.0.0.1;
+    local_ip = 0.0.0.0;
     local_port = $REDSOCKS_PORT;
     type = socks5;
     ip = 127.0.0.1;
@@ -97,7 +97,7 @@ EOF
   cat > /etc/dnsmasq.conf <<EOF
 no-resolv
 server=$UPSTREAM_DNS
-listen-address=127.0.0.1
+listen-address=127.0.0.1,172.17.0.1
 proxy-dnssec
 EOF
   systemctl restart dnsmasq || {
@@ -111,9 +111,11 @@ EOF
   iptables -t nat -X PROXY 2>/dev/null || true
 
   # 创建新链
-  # iptables -t nat -N PROXY
-  iptables -t nat -A OUTPUT -j PROXY
-  iptables -t nat -I PREROUTING 1 -i docker0 -j PROXY
+  iptables -t nat -N PROXY 2>/dev/null || true
+  iptables -t nat -A OUTPUT -p tcp -j PROXY
+  iptables -t nat -A OUTPUT -p udp -j PROXY
+  iptables -t nat -I PREROUTING 1 -i docker0 -p tcp -j PROXY
+  iptables -t nat -I PREROUTING 1 -i docker0 -p udp -j PROXY
 
   # 跳过保留地址
   local reserved_ips=(
@@ -130,8 +132,9 @@ EOF
   iptables -t nat -A PROXY -p tcp --dport 53 -j RETURN
   iptables -t nat -A PROXY -p udp --dport 53 -j RETURN
 
-  # 重定向其他 TCP 流量
+  # 重定向其他 TCP/UDP 流量
   iptables -t nat -A PROXY -p tcp -j REDIRECT --to-port $REDSOCKS_PORT
+  iptables -t nat -A PROXY -p udp -j REDIRECT --to-port $REDSOCKS_PORT
 
   step "8. 持久化配置..."
   iptables-save > /etc/sysconfig/iptables
